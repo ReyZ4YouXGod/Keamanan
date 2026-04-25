@@ -76,25 +76,38 @@ const question = (text) => {
 
 const BOTS_FILE = path.resolve('./image/lib/database/bots.json')
 
+// load bots
 function loadBots() {
     try {
         if (!fs.existsSync(BOTS_FILE)) {
             const dir = path.dirname(BOTS_FILE)
             if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
-            fs.writeFileSync(BOTS_FILE, '[]', 'utf8')
+            fs.writeFileSync(BOTS_FILE, '[]')
         }
-        return JSON.parse(fs.readFileSync(BOTS_FILE, 'utf8'))
-    } catch { return [] }
+
+        const data = fs.readFileSync(BOTS_FILE, 'utf8')
+        return JSON.parse(data)
+
+    } catch (err) {
+        console.log('[MULTIBOT] Error loadBots:', err.message)
+        return []
+    }
 }
 
+// save bots
 function saveBots(list) {
     try {
         const dir = path.dirname(BOTS_FILE)
         if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
-        fs.writeFileSync(BOTS_FILE, JSON.stringify(list, null, 2), 'utf8')
-    } catch (e) { console.log('[MULTIBOT] Gagal simpan bots.json:', e.message) }
+
+        fs.writeFileSync(BOTS_FILE, JSON.stringify(list, null, 2))
+
+    } catch (err) {
+        console.log('[MULTIBOT] Error saveBots:', err.message)
+    }
 }
 
+// register ke global
 global.activeBots = global.activeBots || {}
 
 const clientstart = async() => {
@@ -467,37 +480,48 @@ const clientstart = async() => {
     return client;
 }
 
-module.exports = { clientstart, loadBots, saveBots }
-
-clientstart()
-
 ;(async () => {
     let savedBots = loadBots()
+
     if (savedBots.length > 0) {
-        // Bersihkan bot yang belum selesai pairing (tidak ada creds.json)
         const validBots = []
+
         for (const bot of savedBots) {
             const credsPath = path.resolve('./' + bot.session + '/creds.json')
+
             if (!fs.existsSync(credsPath)) {
-                console.log(`[MULTIBOT] ${bot.label} tidak punya creds.json, hapus otomatis...`)
-                // Hapus folder session kalau ada
+                console.log(`[MULTIBOT] ${bot.label} tidak punya creds.json, hapus...`)
+
                 const sessionPath = path.resolve('./' + bot.session)
                 try {
-                    if (fs.existsSync(sessionPath)) fs.rmSync(sessionPath, { recursive: true, force: true })
+                    if (fs.existsSync(sessionPath)) {
+                        fs.rmSync(sessionPath, { recursive: true, force: true })
+                    }
                 } catch {}
-                continue // skip, tidak dimasukkan validBots
+
+                continue
             }
+
             validBots.push(bot)
         }
-        // Update bots.json hanya yang valid
+
         if (validBots.length !== savedBots.length) {
             saveBots(validBots)
-            console.log(`[MULTIBOT] ${savedBots.length - validBots.length} bot tidak valid dihapus dari daftar`)
+            console.log(`[MULTIBOT] ${savedBots.length - validBots.length} bot invalid dihapus`)
         }
+
         if (validBots.length > 0) {
-            console.log(`[MULTIBOT] Memuat ${validBots.length} bot tambahan...`)
+            console.log(`[MULTIBOT] Load ${validBots.length} bot...`)
+
             for (const bot of validBots) {
+                // ❗ CEK BIAR GAK DOBEL
+                if (global.activeBots[bot.session]) {
+                    console.log(`[MULTIBOT] ${bot.label} sudah aktif, skip`)
+                    continue
+                }
+
                 await sleep(3000)
+
                 clientstart(bot.session, bot.label, bot.number, bot.chatJid || null)
             }
         }
